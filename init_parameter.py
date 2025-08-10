@@ -34,6 +34,8 @@ def init_model():
 
     parser.add_argument("--save_model_path", default='./model', type=str,
                         help="Path to save model checkpoints. Set to None if not save.")
+    parser.add_argument("--load_full_model_path", default=None, type=str,
+                        help="Path to a directory containing a saved full model (full_model.pt) for reevaluation.")
     
     parser.add_argument("--dataset", default=None, type=str, required=True,
                         help="Name of dataset.")
@@ -136,6 +138,9 @@ def init_model():
     # Cluster Instance Alignment Learning
     parser.add_argument("--weight_cluster_instance_cl", default=0, type=float, help="The weight of alignment loss.")    
     parser.add_argument("--options_cluster_instance_ratio", default=0.5, type=float, help="# Options in querying llm.")
+
+    # Clustering Algorithm
+    parser.add_argument("--clustering_algorithm", default="kmeans", type=str, help="Choose clustering algorithm from kmeans|hdbscan|spectral|gmm")
 
     # LLM Feedback Caching & Replaying
     parser.add_argument("--feedback_cache", action="store_true", help="Save all feedback.")

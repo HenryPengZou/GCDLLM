@@ -1,4 +1,6 @@
 from utils.tools import *
+import os
+import torch
 from utils.contrastive import SupConLoss
         
 class BertForModel(nn.Module):
@@ -46,6 +48,7 @@ class CLBert(nn.Module):
         self.model_name = model_name
         self.device = device
         self.num_labels = num_labels
+        self.feat_dim = feat_dim
         self.backbone = AutoModelForMaskedLM.from_pretrained(self.model_name)
         hidden_size = self.backbone.config.hidden_size
         self.head = nn.Sequential(
@@ -102,6 +105,21 @@ class CLBert(nn.Module):
 
     def save_backbone(self, save_path):
         self.backbone.save_pretrained(save_path)
+
+    def save_full_model(self, save_dir: str) -> None:
+        """Save the entire model (backbone, head, classifier) plus key hyperparameters."""
+        os.makedirs(save_dir, exist_ok=True)
+        checkpoint = {
+            "state_dict": self.state_dict(),
+            "model_name": self.model_name,
+            "num_labels": self.num_labels,
+            "feat_dim": self.feat_dim,
+            "architecture": getattr(self.args, "architecture", None),
+        }
+
+        # Save the full model checkpoint  
+        model_name = f'{self.args.dataset}_known_cls_ratio_{self.args.known_cls_ratio}_labeled_ratio_{self.args.labeled_ratio}_weight_cluster_instance_cl_{self.args.weight_cluster_instance_cl}_evaluation_epoch_{self.args.evaluation_epoch}'
+        torch.save(checkpoint, os.path.join(save_dir, f'{model_name}.pt'))
 
 
 class DistillLoss(nn.Module):

@@ -13,7 +13,9 @@ class Data:
             args.pretrain_dir = './pretrain_model/premodel_' + args.dataset + '_known_cls_ratio_' + str(args.known_cls_ratio) + '_labeled_shot_' + str(args.labeled_shot) + '_seed_' + str(args.seed) + '_method_' + str(args.running_method)
         elif args.label_setting == 'ratio':
             args.pretrain_dir = './pretrain_model/premodel_' + args.dataset + '_seed_' + str(args.seed) + '_known_cls_ratio_' + str(args.known_cls_ratio) + '_labeled_ratio_' + str(args.labeled_ratio) + '_method_' + str(args.running_method)
-        args.save_model_path = './model_' + args.dataset + '_' + str(args.seed)
+        # Respect user-provided save path; only set a default if not provided or left as the parser default
+        if not getattr(args, "save_model_path", None) or args.save_model_path == './model':
+            args.save_model_path = f'./model_{args.dataset}_{args.seed}'
         args.topk = TOPK[args.dataset]
         args.task = task[args.dataset]
         processor = DatasetProcessor()

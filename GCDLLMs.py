@@ -30,6 +30,7 @@ class ModelManager:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.num_labels = data.num_labels
         self.model = CLBert(args, args.bert_model, device=self.device, num_labels=data.num_labels)
+        self.num_cached_feedback = 0
 
         if n_gpu > 1:
             self.model = nn.DataParallel(self.model)
@@ -112,7 +113,7 @@ class ModelManager:
         feats_test = feats_test.cpu().numpy()
 
         # clustering result
-        km = KMeans(n_clusters = self.num_labels, random_state=args.seed).fit(feats_test)
+        km = perform_clustering(feats_test, n_clusters=self.num_labels, algorithm=args.clustering_algorithm, random_state=args.seed)
         y_pred = km.labels_
         y_true = labels.cpu().numpy()
         results = clustering_score(y_true, y_pred, data.known_lab)
@@ -125,7 +126,7 @@ class ModelManager:
 
     def train(self, args, data):
         args.evaluation_epoch = 0
-        # self.evaluation(args, data, save_results=False, plot_cm=False)
+        self.evaluation(args, data, save_results=True, plot_cm=False)
 
         if isinstance(self.model, nn.DataParallel):
             criterion = self.model.module.loss_cl
@@ -146,8 +147,8 @@ class ModelManager:
         feats_gpu, labels, logits = self.get_features_labels(data.train_semi_dataloader, self.model, args, return_logit=True)
         feats = feats_gpu.cpu().numpy()
 
-        # Perform K-Means Clustering and extract cluster centers
-        km = KMeans(n_clusters = self.num_labels, random_state=args.seed).fit(feats)
+        # Perform Clustering and extract cluster centers
+        km = perform_clustering(feats, n_clusters=self.num_labels, algorithm=args.clustering_algorithm, random_state=args.seed)
 
         # Category Characterization
         if self.args.weight_cluster_instance_cl > 0:
@@ -319,12 +320,22 @@ class ModelManager:
             if ((epoch + 1) % args.update_per_epoch) == 0 and ((epoch + 1) != int(args.num_train_epochs)):
                 self.evaluation(args, data, save_results=True, plot_cm=False)
 
+                # save full model 
+                if args.save_model:
+                    print('Saving Model ...')
+                    try:
+                        self.model.save_full_model(args.save_model_path)
+                        print('Full model saved! Path: ', args.save_model_path)
+                    except Exception as e:
+                        print(f"Warning: failed to save full model checkpoint: {e}")
+                
+
                 # Obtain initial features, labels, logits
                 feats_gpu, labels, logits = self.get_features_labels(data.train_semi_dataloader, self.model, args, return_logit=True)
                 feats = feats_gpu.cpu().numpy()
 
-                # Perform K-Means Clustering and extract cluster centers
-                km = KMeans(n_clusters = self.num_labels, random_state=args.seed).fit(feats)
+                # Perform Clustering and extract cluster centers
+                km = perform_clustering(feats, n_clusters=self.num_labels, algorithm=args.clustering_algorithm, random_state=args.seed)
 
                 if self.args.weight_cluster_instance_cl > 0:
                     # Category Characterization
@@ -333,7 +344,7 @@ class ModelManager:
                     print('len(cluster_name)',len(cluster_name))
                     label_names = list(args.label_map_semi.keys())
                     print('label_names',label_names)  
-                    measure_interpretability(cluster_name, label_names, args)  
+                    # measure_interpretability(cluster_name, label_names, args)
                 else:
                     cluster_name = None
 
@@ -376,7 +387,7 @@ class ModelManager:
                 # handle case where there are fewer samples than the number of representatives
                 if cluster_feats.size(0) < interpret_num_representatives:
                     interpret_num_representatives = cluster_feats.size(0)
-                sub_km = KMeans(n_clusters=interpret_num_representatives, random_state=self.args.seed).fit(cluster_feats.cpu().numpy())
+                sub_km = perform_clustering(cluster_feats.cpu().numpy(), n_clusters=interpret_num_representatives, algorithm=self.args.clustering_algorithm, random_state=self.args.seed)
                 sub_cluster_centers = torch.tensor(sub_km.cluster_centers_).to(feats_gpu.device)
                 dis = self.EuclideanDistances(cluster_feats, sub_cluster_centers).T
                 _, sub_index = torch.sort(dis, dim=1)
@@ -539,13 +550,13 @@ class ModelManager:
             os.makedirs(args.save_results_path)
         var = [args.evaluation_epoch, args.dataset, args.running_method, args.architecture, args.known_cls_ratio, args.label_setting, args.labeled_shot, args.labeled_ratio, result_source, args.seed, args.topk, args.view_strategy, args.num_train_epochs, args.ce_weight, args.cl_weight, args.sup_weight, args.weight_ce_unsup, args.options, args.query_samples, args.update_per_epoch,
                args.sampling_strategy, args.allocation_degree, 
-               args.weight_cluster_instance_cl, args.options_cluster_instance_ratio,
+               args.weight_cluster_instance_cl, args.options_cluster_instance_ratio, args.clustering_algorithm,
                args.prompt_ablation, args.component_ablation, args.llm,
                args.feedback_cache, self.num_cached_feedback,
                args.flag_demo, args.known_demo_num_per_class, args.flag_filtering, args.flag_demo_c, args.known_demo_num_per_class_c, args.flag_filtering_c, args.filter_threshold, args.filter_threshold_c]
         names = ['evaluation_epoch', 'dataset', 'running_method', 'architecture', 'known_cls_ratio', 'label_setting', 'labeled_shot', 'labeled_ratio', 'result_source', 'seed', 'topk', 'view_strategy', 'num_train_epochs', 'ce_weight', 'cl_weight', 'sup_weight', 'weight_ce_unsup', 'options', 'query_samples', 'update_per_epoch',
                  'sampling_strategy', 'allocation_degree',
-                 'weight_cluster_instance_cl', 'options_cluster_instance_ratio', 
+                 'weight_cluster_instance_cl', 'options_cluster_instance_ratio', 'clustering_algorithm',
                  'prompt_ablation', 'component_ablation', 'llm',
                  'feedback_cache', 'num_cached_feedback',
                  'flag_demo', 'known_demo_num_per_class', 'flag_filtering', 'flag_demo_c', 'known_demo_num_per_class_c', 'flag_filtering_c', 'filter_threshold', 'filter_threshold_c']
@@ -589,7 +600,7 @@ class ModelManager:
     def predict_k(self, args, data):
         feats, _ = self.get_features_labels(data.train_semi_dataloader, self.pretrained_model.cuda(), args)
         feats = feats.cpu().numpy()
-        km = KMeans(n_clusters = data.num_labels).fit(feats)
+        km = perform_clustering(feats, n_clusters=data.num_labels, algorithm=args.clustering_algorithm, random_state=args.seed)
         y_pred = km.labels_
 
         pred_label_list = np.unique(y_pred)
@@ -616,10 +627,10 @@ if __name__ == '__main__':
     
     var = [args.dataset, args.running_method, args.architecture, args.known_cls_ratio, args.label_setting, args.labeled_shot, args.labeled_ratio, result_source, args.seed, args.topk, args.view_strategy, args.num_train_epochs, args.ce_weight, args.cl_weight, args.sup_weight, args.weight_ce_unsup, args.options, args.query_samples, args.update_per_epoch,
             args.sampling_strategy, args.allocation_degree,
-            args.weight_cluster_instance_cl, args.options_cluster_instance_ratio]
+            args.weight_cluster_instance_cl, args.options_cluster_instance_ratio, args.clustering_algorithm]
     names = ['dataset', 'running_method', 'architecture', 'known_cls_ratio', 'label_setting', 'labeled_shot', 'labeled_ratio', 'result_source', 'seed', 'topk', 'view_strategy', 'num_train_epochs', 'ce_weight', 'cl_weight', 'sup_weight', 'weight_ce_unsup', 'options', 'query_samples', 'update_per_epoch',
                 'sampling_strategy', 'allocation_degree',
-                'weight_cluster_instance_cl', 'options_cluster_instance_ratio']
+                'weight_cluster_instance_cl', 'options_cluster_instance_ratio', 'clustering_algorithm']
 
     print('\n### Key Hyperparameters and Values###')
     for i in range(len(names)):
@@ -661,6 +672,14 @@ if __name__ == '__main__':
     print('Evaluation finished!')
     if args.save_model:
         print('Saving Model ...')
-        manager.model.save_backbone(args.save_model_path)
+        try:
+            args.evaluation_epoch = -100
+            manager.model.save_full_model(args.save_model_path)
+            print('Full model saved! Path: ', args.save_model_path)
+        except Exception as e:
+            print(f"Warning: failed to save full model checkpoint: {e}")
+
+
+
     print('\n Number of All LLM feedback: ',len(manager.di_all))
     print("Finished!")

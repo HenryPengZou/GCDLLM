@@ -1,6 +1,10 @@
 # Custom
 pretrain_model/
 run_sec.sh
+outputs/
+checkpoint_dir/
+model_clinc
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

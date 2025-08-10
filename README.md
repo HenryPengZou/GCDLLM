@@ -52,6 +52,24 @@ sh run.sh
 You can also add or change parameters in run.sh (More parameters are listed in init_parameter.py)
 
 
+## Checkpoints
+You can download model checkpoints from [checkpoints](https://huggingface.co/TreeForest/GCDLLM/tree/main), for example:
+
+```bash
+mkdir -p /intern/users/henry/gcdllm/GCDLLM/checkpoint_dir 
+
+wget -P ./checkpoint_dir/ https://huggingface.co/TreeForest/GCDLLM/resolve/main/model_clinc/clinc_known_cls_ratio_0.25_labeled_ratio_0.1_weight_cluster_instance_cl_0.05_evaluation_epoch_24.pt
+
+```
+You can reevaluate this checkpoint through the bash script:
+
+```bash
+bash run_reevaluate.sh ./model_clinc/clinc_known_cls_ratio_0.25_labeled_ratio_0.1_weight_cluster_instance_cl_0.05_evaluation_epoch_24.pt 
+```
+
+
+
+
 ## Bugs or Questions
 
 If you have any questions related to the code or the project, feel free to email Henry Peng Zou ([pzou3@uic.edu](pzou3@uic.edu), [penzou@amazon.com](penzou@amazon.com)). If you encounter any problems when using the code, or want to report a bug, please also feel free to reach out to us. Please try to specify the problem with details so we can help you better and quicker!
